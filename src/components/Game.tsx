@@ -89,12 +89,25 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [state?.phase]);
 
+  /** After new log lines, scroll the transcript and the window so the latest text is visible. */
   useEffect(() => {
-    const el = logScrollRef.current;
-    if (!el) return;
+    if (!state?.logLines) return;
+    let cancelled = false;
     requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const log = logScrollRef.current;
+        if (log) log.scrollTop = log.scrollHeight;
+        const y = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+        );
+        window.scrollTo({ top: y, left: 0, behavior: "auto" });
+      });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [state?.logLines]);
 
   const onSubmit = (e: React.FormEvent) => {
