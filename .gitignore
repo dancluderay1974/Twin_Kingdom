@@ -9,3 +9,8 @@ npm-debug.log*
 .npm-cache/
 src/decompiled/
 tools/*.jar
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
