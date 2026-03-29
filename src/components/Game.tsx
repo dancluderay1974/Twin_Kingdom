@@ -9,9 +9,16 @@ import { hasSave } from "../game/save";
 
 const base = import.meta.env.BASE_URL;
 
+/** J2ME framebuffer in CSS px; frame adds 2px border per side. */
+const CANVAS_CSS_W = 176;
+const CANVAS_CSS_H = 220;
+const FRAME_W = CANVAS_CSS_W + 4;
+const FRAME_H = CANVAS_CSS_H + 4;
+
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const logScrollRef = useRef<HTMLDivElement>(null);
+  /** Scrolls transcript; header + canvas are sticky at top of this region. */
+  const mainScrollRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<TwinKingdomEngine | null>(null);
   const [state, setState] = useState<EngineState | null>(null);
   const [input, setInput] = useState("");
@@ -89,20 +96,15 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [state?.phase]);
 
-  /** After new log lines, scroll the transcript and the window so the latest text is visible. */
+  /** After new log lines, scroll so the latest transcript is visible (sticky header stays put). */
   useEffect(() => {
     if (!state?.logLines) return;
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (cancelled) return;
-        const log = logScrollRef.current;
-        if (log) log.scrollTop = log.scrollHeight;
-        const y = Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-        );
-        window.scrollTo({ top: y, left: 0, behavior: "auto" });
+        const el = mainScrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
       });
     });
     return () => {
@@ -148,49 +150,83 @@ export default function Game() {
       style={{
         boxSizing: "border-box",
         width: "100%",
-        minHeight: "100vh",
+        flex: "1 1 0",
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
         fontFamily: "ui-monospace, monospace",
         background: "#0d1117",
         color: "#c9d1d9",
         padding: 16,
+        overflow: "hidden",
       }}
     >
-      <h1 style={{ fontSize: 18, marginBottom: 8, flexShrink: 0 }}>
-        Twin Kingdom Valley
-      </h1>
-      {state?.phase === "error" && (
-        <p style={{ color: "#f85149", flexShrink: 0 }}>{state.error}</p>
-      )}
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          border: "2px solid #30363d",
-          borderRadius: 4,
-          imageRendering: "pixelated",
-          flexShrink: 0,
-        }}
-      />
       <div
-        ref={logScrollRef}
+        ref={mainScrollRef}
         style={{
-          flex: 1,
-          minHeight: 180,
+          flex: "1 1 0",
+          minHeight: 0,
           overflowY: "auto",
-          marginTop: 12,
-          padding: 8,
-          background: "#161b22",
-          borderRadius: 4,
-          fontSize: 12,
-          lineHeight: 1.45,
-          whiteSpace: "pre-wrap",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
         }}
       >
-        {(state?.logLines ?? []).map((line, i) => (
-          <div key={i}>{line}</div>
-        ))}
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 2,
+            width: "100%",
+            boxSizing: "border-box",
+            paddingBottom: 10,
+            marginBottom: 2,
+            background: "#0d1117",
+            boxShadow: "0 6px 12px rgba(0,0,0,0.45)",
+          }}
+        >
+          <h1 style={{ fontSize: 18, margin: "0 0 8px" }}>
+            Twin Kingdom Valley
+          </h1>
+          {state?.phase === "error" && (
+            <p style={{ color: "#f85149", margin: "0 0 8px" }}>{state.error}</p>
+          )}
+          <div
+            style={{
+              width: FRAME_W,
+              height: FRAME_H,
+              boxSizing: "border-box",
+              border: "2px solid #30363d",
+              borderRadius: 4,
+              overflow: "hidden",
+              background: "#000",
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_CSS_W}
+              height={CANVAS_CSS_H}
+              style={{
+                display: "block",
+                imageRendering: "pixelated",
+              }}
+            />
+          </div>
+        </div>
+        <div
+          style={{
+            padding: 8,
+            background: "#161b22",
+            borderRadius: 4,
+            fontSize: 12,
+            lineHeight: 1.45,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {(state?.logLines ?? []).map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
       </div>
       <form
         onSubmit={onSubmit}

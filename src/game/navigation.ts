@@ -5,6 +5,7 @@
  */
 
 import type { GameWorld } from "./world";
+import { decodeB } from "./strings";
 
 export type ParsedExit = {
   /** Raw ay word from room stream */
@@ -88,10 +89,8 @@ type ExitHeader = {
 
 function readExitHeader(world: GameWorld, roomId: number): ExitHeader | null {
   const b = world.shortB2478;
-  const c = world.shortC200;
-  if (roomId < 0 || roomId >= c.length) return null;
-  const au = c[roomId] | 0;
-  if (au < 0 || au + 1 >= b.length) return null;
+  const au = roomAu(world, roomId);
+  if (au == null || au + 1 >= b.length) return null;
   const ai = (b[au + 1] << 16) >> 16;
   const lineCount = ai & 0x1f;
   const axStart = lineCount + 2;
@@ -225,16 +224,53 @@ export function findExitForCompass(
   };
 }
 
+/** Java `c[roomId]` as unsigned index into `b` (matches `gameState.enterRoom`). */
+function roomAu(world: GameWorld, roomId: number): number | null {
+  const c = world.shortC200;
+  if (roomId < 0 || roomId >= c.length) return null;
+  let au = c[roomId] | 0;
+  if (au < 0) au = (au + 65536) & 0xffff;
+  if (au + 2 >= world.shortB2478.length) return null;
+  return au;
+}
+
+/**
+ * Full room prose: `e.ak()` prints `lineCount` strings from `b[au+2..]` via `e.b` (decodeB).
+ * Previously we only decoded the first id, so the player saw one token ("ON") instead of a sentence.
+ */
+export function roomDescriptionText(world: GameWorld, roomId: number): string {
+  const b = world.shortB2478;
+  const au = roomAu(world, roomId);
+  if (au == null) return "";
+  const w1 = (b[au + 1] << 16) >> 16;
+  const lineCount = w1 & 0x1f;
+  if (lineCount <= 0) return "";
+  const parts: string[] = [];
+  for (let i = 0; i < lineCount; i++) {
+    const idx = au + 2 + i;
+    if (idx >= b.length) break;
+    const sid = b[idx] | 0;
+    try {
+      const s = decodeB(world, sid);
+      if (s) parts.push(s);
+    } catch {
+      /* skip bad index */
+    }
+  }
+  const raw = parts.join(" ").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 /** First room description string id after header, or null */
 export function firstRoomDescriptionStringId(
   world: GameWorld,
   roomId: number,
 ): number | null {
   const b = world.shortB2478;
-  const c = world.shortC200;
-  if (roomId < 0 || roomId >= c.length) return null;
-  const au = c[roomId];
-  if (au < 0 || au + 2 >= b.length) return null;
+  const au = roomAu(world, roomId);
+  if (au == null) return null;
   const ai = (b[au + 1] << 16) >> 16;
   const lineCount = ai & 0x1f;
   if (lineCount <= 0) return null;

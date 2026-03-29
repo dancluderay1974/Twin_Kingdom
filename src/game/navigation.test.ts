@@ -8,6 +8,7 @@ import {
   findExitForDirectionMask,
   JAVA_J_DIRECTION_MASKS,
   listSimpleExits,
+  roomDescriptionText,
   verbToDirectionMask,
 } from "./navigation";
 
@@ -52,5 +53,14 @@ describe("navigation / e.j exit model", () => {
     for (const ex of simple) {
       expect((ex.ay & 0x80) === 0).toBe(true);
     }
+  });
+
+  it("roomDescriptionText joins all header lines (e.ak-style)", () => {
+    const world = loadWorld();
+    const cabin = roomDescriptionText(world, 0).toLowerCase();
+    expect(cabin).toContain("inside");
+    expect(cabin).toContain("cabin");
+    const road = roomDescriptionText(world, 1).toLowerCase();
+    expect(road).toContain("road");
   });
 });

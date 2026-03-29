@@ -3,7 +3,7 @@ import { parseCommandLine } from "./parser";
 import { classifyVerb } from "../jme/eDispatch";
 import {
   exitsCompassHint,
-  firstRoomDescriptionStringId,
+  roomDescriptionText,
   verbToDirectionMask,
   findExitForDirectionMask,
 } from "./navigation";
@@ -384,17 +384,14 @@ export class TwinKingdomEngine {
     this.emit();
   }
 
-  /** Room line for transcript — prefers first 1.bin description string id */
+  /** Room line for transcript — all header lines from 1.bin (see e.ak / decodeB). */
   private describeCurrentRoom(): string {
     if (!this.world) return "";
-    const sid = firstRoomDescriptionStringId(this.world, this.roomIndex);
-    if (sid != null) {
-      try {
-        const s = decodeB(this.world, sid);
-        if (s) return s;
-      } catch {
-        /* fall through */
-      }
+    try {
+      const full = roomDescriptionText(this.world, this.roomIndex);
+      if (full) return full;
+    } catch {
+      /* fall through */
     }
     try {
       return decodeB(this.world, Math.min(Math.max(0, this.roomIndex), 79));
