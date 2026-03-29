@@ -36,3 +36,31 @@ export const DIRECTIONS: Record<string, string> = {
   u: "up",
   d: "down",
 };
+
+/**
+ * Extra verbs recognized in input (same help list as e.java / string table).
+ * Object commands stay `unknown` in eDispatch until `k(int)` handlers exist.
+ */
+export const OBJECT_VERB_ALIASES: Record<string, string> = {
+  get: "get",
+  take: "get",
+  grab: "get",
+  drop: "drop",
+  fight: "fight",
+  open: "open",
+  ask: "ask",
+  fill: "fill",
+  on: "on",
+  swim: "swim",
+  drink: "drink",
+  use: "use",
+  give: "give",
+  wear: "wear",
+  remove: "remove",
+  read: "read",
+  eat: "eat",
+  throw: "throw",
+  search: "search",
+  save: "save",
+  load: "load",
+};

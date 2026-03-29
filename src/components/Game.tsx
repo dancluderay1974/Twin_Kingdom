@@ -17,6 +17,8 @@ export default function Game() {
   const [input, setInput] = useState("");
   const [spImg, setSpImg] = useState<HTMLImageElement | null>(null);
   const [loImg, setLoImg] = useState<HTMLImageElement | null>(null);
+  /** Optional status-bar chrome (original sc.png); ignored if missing */
+  const [scImg, setScImg] = useState<HTMLImageElement | null>(null);
 
   useEffect(() => {
     const eng = new TwinKingdomEngine();
@@ -39,6 +41,11 @@ export default function Game() {
     lo.decoding = "async";
     lo.src = `${base}assets/lo.png`;
     lo.onload = () => setLoImg(lo);
+    const sc = new Image();
+    sc.decoding = "async";
+    sc.onload = () => setScImg(sc);
+    sc.onerror = () => setScImg(null);
+    sc.src = `${base}assets/sc.png`;
   }, []);
 
   useEffect(() => {
@@ -49,10 +56,17 @@ export default function Game() {
       const buf = engineRef.current?.getPictureBuffer();
       if (buf) drawPictureBuffer(ctx, buf, 0, 0);
       else drawSpriteFrame(ctx, spImg, 176, 220);
+      if (scImg && scImg.naturalWidth > 0) {
+        const barH = Math.min(
+          220,
+          Math.round((176 * scImg.naturalHeight) / scImg.naturalWidth),
+        );
+        ctx.drawImage(scImg, 0, 220 - barH, 176, barH);
+      }
     } else if (state.phase !== "splash") {
       drawSpriteFrame(ctx, spImg, 176, 220);
     }
-  }, [spImg, state?.phase, state?.pictureTick]);
+  }, [spImg, scImg, state?.phase, state?.pictureTick]);
 
   useEffect(() => {
     if (state?.phase !== "splash" || !loImg) return;

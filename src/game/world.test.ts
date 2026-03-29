@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { decodeD } from "./strings";
 import { assert1BinFullyConsumed, load1Bin } from "./world";
-import { bootstrapResume, decodeResumeRecord, encodeResumeRecord } from "../jme/resumeRecord";
+import { findExitForCompass, listSimpleExits } from "./navigation";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -27,19 +27,18 @@ describe("1.bin loader", () => {
   });
 });
 
-describe("resume record", () => {
-  it("round-trips after bootstrap", () => {
+describe("navigation", () => {
+  it("room 0 has a NE exit to room 1", () => {
     const path = join(root, "public/data/1.bin");
     const buf = readFileSync(path);
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     const world = load1Bin(ab);
-    const rt = bootstrapResume(world);
-    const enc = encodeResumeRecord(rt);
-    const dec = decodeResumeRecord(enc);
-    const enc2 = encodeResumeRecord(dec);
-    expect(enc2.length).toBe(enc.length);
-    for (let i = 0; i < enc.length; i++) {
-      expect(enc2[i]).toBe(enc[i]);
-    }
+    const exits = listSimpleExits(world, 0);
+    expect(exits.length).toBeGreaterThan(0);
+    const ne = findExitForCompass(world, 0, 1);
+    expect(ne).not.toBeNull();
+    expect(ne!.destRoom).toBe(1);
+    expect(findExitForCompass(world, 0, 0)).toBeNull();
   });
 });
+

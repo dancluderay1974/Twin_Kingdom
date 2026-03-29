@@ -1,5 +1,12 @@
 import { decodeB, decodeD } from "./strings";
-import { DIRECTIONS, parseCommandLine } from "./parser";
+import { parseCommandLine } from "./parser";
+import { classifyVerb } from "../jme/eDispatch";
+import {
+  exitsCompassHint,
+  firstRoomDescriptionStringId,
+  verbToDirectionMask,
+  findExitForDirectionMask,
+} from "./navigation";
 import { load1Bin, load3Bin, type GameWorld } from "./world";
 import {
   applyResumeToWorld,
@@ -11,9 +18,14 @@ import {
   writeSaveV2,
   type LoadedSave,
 } from "./save";
-import type { ResumeRuntime } from "../jme/resumeRecord";
+import {
+  applyGInitResume,
+  mergeResumeToWorld,
+  type ResumeRuntime,
+} from "../jme/resumeRecord";
 import { PictureInterpreter } from "../jme/pictureM";
 import { midpYield } from "../jme/enginePort";
+import { attachGameState, type GameState } from "../jme/gameState";
 
 export type GamePhase =
   | "loading"
@@ -76,6 +88,8 @@ export class TwinKingdomEngine {
   private readonly picture = new PictureInterpreter();
   /** Mutable resume snapshot (tkv_resume); kept in sync on save */
   resume: ResumeRuntime | null = null;
+  /** Port of static `a.*` room / scalar state */
+  gameState: GameState | null = null;
   private bin1Buffer: ArrayBuffer | null = null;
   private bin3Buffer: ArrayBuffer | null = null;
   private pages2: string[][] = [];
@@ -91,7 +105,11 @@ export class TwinKingdomEngine {
     pictureTick: 0,
   };
 
-  roomIndex = 0;
+  /** Room id (Java `a.ak`); mirrors `gameState.ak` when playing */
+  get roomIndex(): number {
+    return this.gameState?.ak ?? 0;
+  }
+
   score = 0;
   /** Mirrors progress display a.H / 1250 from original */
   playerStat = 1;
@@ -148,6 +166,7 @@ export class TwinKingdomEngine {
       this.bin3Buffer = b3;
       this.world = load1Bin(b1);
       this.resume = newResumeFromFreshWorld(this.world);
+      this.gameState = attachGameState(this.world, this.resume);
       load3Bin(this.world, b3);
       this.pages2 = read2BinPages(b2);
       this.state.introTotalPages = this.pages2.length;
@@ -207,12 +226,14 @@ export class TwinKingdomEngine {
       this.appendLog(decodeD(this.world, 0));
       this.appendLog(decodeD(this.world, 1));
       this.appendLog("");
+      this.appendLog(this.describeCurrentRoom());
       this.appendLog(
-        decodeD(this.world, 53) || "You stand in Twin Kingdom Valley.",
+        "Move with compass directions: N, NE, E, SE, S, SW (and LOOK, HELP, …).",
       );
-      this.appendLog(
-        "Type HELP for commands, or N S E W to move (demo traversal).",
-      );
+      const hint = this.world
+        ? exitsCompassHint(this.world, this.roomIndex)
+        : "";
+      if (hint) this.appendLog(hint);
     } catch {
       this.appendLog("Welcome to Twin Kingdom Valley.");
     }
@@ -225,9 +246,9 @@ export class TwinKingdomEngine {
     if (this.bin1Buffer) {
       this.world = load1Bin(this.bin1Buffer);
       this.resume = newResumeFromFreshWorld(this.world);
+      this.gameState = attachGameState(this.world, this.resume);
       if (this.bin3Buffer) load3Bin(this.world, this.bin3Buffer);
     }
-    this.roomIndex = 0;
     this.score = 0;
     this.playerStat = 1;
     this.state.logLines = [];
@@ -246,7 +267,7 @@ export class TwinKingdomEngine {
       return;
     }
     const payload = buildSaveV2(this.world, this.resume, {
-      roomIndex: this.roomIndex,
+      roomIndex: this.gameState?.ak ?? 0,
       score: this.score,
       playerStat: this.playerStat,
       logSnapshot: this.state.logLines.slice(-40),
@@ -269,7 +290,6 @@ export class TwinKingdomEngine {
   private applyLoadedSave(loaded: LoadedSave): void {
     if (!this.world) return;
     const p = loaded.payload;
-    this.roomIndex = p.roomIndex;
     this.score = p.score;
     this.playerStat = p.playerStat;
     if (p.logSnapshot?.length) {
@@ -277,8 +297,13 @@ export class TwinKingdomEngine {
     }
     if (loaded.version === 2 && "resume" in p) {
       this.resume = applyResumeToWorld(this.world, p.resume);
+      this.gameState = attachGameState(this.world, this.resume);
     } else {
       this.resume = createResumeFromWorld(this.world);
+      applyGInitResume(this.resume);
+      mergeResumeToWorld(this.world, this.resume);
+      this.gameState = attachGameState(this.world, this.resume);
+      this.gameState.enterRoom(p.roomIndex);
     }
   }
 
@@ -288,63 +313,102 @@ export class TwinKingdomEngine {
     if (!verb) return;
     this.appendLog(`> ${input.trim()}`);
 
-    const dir = DIRECTIONS[verb];
-    if (dir) {
-      this.moveDirection(dir);
+    const bucket = classifyVerb(verb);
+    if (bucket.kind === "move") {
+      this.moveDirection(bucket.canon);
+      this.emit();
+      return;
+    }
+    if (bucket.kind === "meta") {
+      switch (bucket.id) {
+        case "look":
+          this.doLook();
+          break;
+        case "score":
+          this.appendLog(` ${this.playerStat}/${1250}`);
+          this.emit();
+          break;
+        case "help":
+          this.doHelp();
+          break;
+        case "inventory":
+          this.appendLog("You are carrying nothing of note.");
+          this.emit();
+          break;
+        case "quit":
+          this.appendLog("Use the menu to exit — or close the tab.");
+          this.emit();
+          break;
+      }
+      void tokens;
       return;
     }
 
-    switch (verb) {
-      case "look":
-      case "l":
-        this.doLook();
-        break;
-      case "score":
-        this.appendLog(` ${this.playerStat}/${1250}`);
-        break;
-      case "help":
-      case "?":
-        this.doHelp();
-        break;
-      case "inventory":
-      case "i":
-        this.appendLog("You are carrying nothing of note.");
-        break;
-      case "quit":
-      case "exit":
-        this.appendLog("Use the menu to exit — or close the tab.");
-        break;
-      default:
-        this.appendLog(
-          this.world
-            ? decodeD(this.world, 53)
-            : "I don't understand that yet.",
-        );
-    }
+    this.appendLog(
+      this.world ? decodeD(this.world, 53) : "I don't understand that yet.",
+    );
     void tokens;
     this.emit();
   }
 
   private moveDirection(d: string): void {
-    if (!this.world) return;
-    this.roomIndex = (this.roomIndex + d.length + 3) % 200;
-    try {
-      const desc = decodeB(this.world, this.roomIndex % 80);
-      this.appendLog(`(${d.toUpperCase()})`);
-      this.appendLog(desc || "You wander the valley…");
-    } catch {
+    if (!this.world || !this.gameState) return;
+    const mask = verbToDirectionMask(d);
+    this.appendLog(`(${d.toUpperCase()})`);
+    if (mask === undefined) {
       this.appendLog("You can't go that way.");
+      const hint = exitsCompassHint(this.world, this.roomIndex);
+      if (hint) this.appendLog(hint);
+      this.emit();
+      return;
     }
+    const ex = findExitForDirectionMask(this.world, this.gameState.ak, mask);
+    if (!ex) {
+      this.appendLog("You can't go that way.");
+      const hint = exitsCompassHint(this.world, this.roomIndex);
+      if (hint) this.appendLog(hint);
+      this.emit();
+      return;
+    }
+    this.gameState.enterRoom(ex.destRoom);
     this.score = Math.min(1250, this.score + 1);
     this.playerStat = Math.min(1250, this.playerStat + 2);
+    try {
+      this.appendLog(this.describeCurrentRoom());
+    } catch {
+      this.appendLog("You move on.");
+    }
+    const nh = exitsCompassHint(this.world, this.roomIndex);
+    if (nh) this.appendLog(nh);
     this.refreshPicture();
     this.emit();
+  }
+
+  /** Room line for transcript — prefers first 1.bin description string id */
+  private describeCurrentRoom(): string {
+    if (!this.world) return "";
+    const sid = firstRoomDescriptionStringId(this.world, this.roomIndex);
+    if (sid != null) {
+      try {
+        const s = decodeB(this.world, sid);
+        if (s) return s;
+      } catch {
+        /* fall through */
+      }
+    }
+    try {
+      return decodeB(this.world, Math.min(Math.max(0, this.roomIndex), 79));
+    } catch {
+      return "You see nothing special.";
+    }
   }
 
   private doLook(): void {
     if (!this.world) return;
     try {
-      this.appendLog(decodeB(this.world, this.roomIndex % 80));
+      this.appendLog(this.describeCurrentRoom());
+      const hint = exitsCompassHint(this.world, this.roomIndex);
+      if (hint) this.appendLog(hint);
     } catch {
       this.appendLog("You see nothing special.");
     }
