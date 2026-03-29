@@ -10,6 +10,7 @@ const base = import.meta.env.BASE_URL;
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const logScrollRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<TwinKingdomEngine | null>(null);
   const [state, setState] = useState<EngineState | null>(null);
   const [input, setInput] = useState("");
@@ -67,6 +68,14 @@ export default function Game() {
     return () => clearTimeout(t);
   }, [state?.phase]);
 
+  useEffect(() => {
+    const el = logScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [state?.logLines]);
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const eng = engineRef.current;
@@ -106,20 +115,22 @@ export default function Game() {
   return (
     <div
       style={{
-        maxWidth: 520,
-        margin: "0 auto",
+        boxSizing: "border-box",
+        width: "100%",
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
         fontFamily: "ui-monospace, monospace",
         background: "#0d1117",
         color: "#c9d1d9",
-        minHeight: "100vh",
         padding: 16,
       }}
     >
-      <h1 style={{ fontSize: 18, marginBottom: 8 }}>
+      <h1 style={{ fontSize: 18, marginBottom: 8, flexShrink: 0 }}>
         Twin Kingdom Valley
       </h1>
       {state?.phase === "error" && (
-        <p style={{ color: "#f85149" }}>{state.error}</p>
+        <p style={{ color: "#f85149", flexShrink: 0 }}>{state.error}</p>
       )}
       <canvas
         ref={canvasRef}
@@ -128,11 +139,14 @@ export default function Game() {
           border: "2px solid #30363d",
           borderRadius: 4,
           imageRendering: "pixelated",
+          flexShrink: 0,
         }}
       />
       <div
+        ref={logScrollRef}
         style={{
-          height: 220,
+          flex: 1,
+          minHeight: 180,
           overflowY: "auto",
           marginTop: 12,
           padding: 8,
@@ -147,7 +161,10 @@ export default function Game() {
           <div key={i}>{line}</div>
         ))}
       </div>
-      <form onSubmit={onSubmit} style={{ marginTop: 12, display: "flex", gap: 8 }}>
+      <form
+        onSubmit={onSubmit}
+        style={{ marginTop: 12, display: "flex", gap: 8, flexShrink: 0 }}
+      >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -181,7 +198,7 @@ export default function Game() {
           Enter
         </button>
       </form>
-      <p style={{ fontSize: 11, opacity: 0.65, marginTop: 12 }}>
+      <p style={{ fontSize: 11, opacity: 0.65, marginTop: 12, flexShrink: 0 }}>
         Demo web port: world data loads from original <code>1.bin</code> /{" "}
         <code>2.bin</code> / <code>3.bin</code>. Command parser is simplified;
         full J2ME <code>e.java</code> engine is ~5k lines — extend{" "}
