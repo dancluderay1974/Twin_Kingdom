@@ -1,0 +1,192 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  TwinKingdomEngine,
+  type EngineState,
+} from "../game/engine";
+import { createHiDPICanvas, drawSpriteFrame } from "../game/renderer";
+import { hasSave } from "../game/save";
+
+const base = import.meta.env.BASE_URL;
+
+export default function Game() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<TwinKingdomEngine | null>(null);
+  const [state, setState] = useState<EngineState | null>(null);
+  const [input, setInput] = useState("");
+  const [spImg, setSpImg] = useState<HTMLImageElement | null>(null);
+  const [loImg, setLoImg] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const eng = new TwinKingdomEngine();
+    engineRef.current = eng;
+    const unsub = eng.subscribe(setState);
+    void eng.bootstrap({
+      bin1: `${base}data/1.bin`,
+      bin2: `${base}data/2.bin`,
+      bin3: `${base}data/3.bin`,
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const sp = new Image();
+    sp.decoding = "async";
+    sp.src = `${base}assets/sp.png`;
+    sp.onload = () => setSpImg(sp);
+    const lo = new Image();
+    lo.decoding = "async";
+    lo.src = `${base}assets/lo.png`;
+    lo.onload = () => setLoImg(lo);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !spImg) return;
+    const ctx = createHiDPICanvas(canvas, 176, 220);
+    drawSpriteFrame(ctx, spImg, 176, 220);
+  }, [spImg, state?.phase]);
+
+  useEffect(() => {
+    if (state?.phase !== "splash" || !loImg) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = createHiDPICanvas(canvas, 176, 220);
+    ctx.fillStyle = "#102010";
+    ctx.fillRect(0, 0, 176, 220);
+    const scale = Math.min(176 / loImg.width, 160 / loImg.height);
+    const w = loImg.width * scale;
+    const h = loImg.height * scale;
+    ctx.drawImage(loImg, (176 - w) / 2, (220 - h) / 2, w, h);
+  }, [loImg, state?.phase]);
+
+  useEffect(() => {
+    if (state?.phase !== "splash") return;
+    const t = window.setTimeout(() => {
+      engineRef.current?.enterMenu();
+    }, 2200);
+    return () => clearTimeout(t);
+  }, [state?.phase]);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const eng = engineRef.current;
+    if (!eng || !state) return;
+    const line = input.trim();
+    setInput("");
+
+    if (state.phase === "menu") {
+      const n = parseInt(line, 10);
+      if (n === 1) eng.startIntroFrom2Bin();
+      else if (n === 2) eng.loadGame();
+      else if (n === 3) eng.newGame();
+      else if (n === 4) {
+        if (hasSave()) eng.resumeGame();
+        else eng.appendLog("(No resume data.)");
+      } else if (n === 5) eng.saveGame();
+      else if (n === 6)
+        eng.appendLog("(Options: use on-screen keyboard; demo build.)");
+      else if (n === 7)
+        eng.appendLog(
+          "Twin Kingdom Valley J2ME v1.21 → Web. Data from original binaries.",
+        );
+      else if (n === 8) eng.appendLog("Close the tab to exit.");
+      return;
+    }
+
+    if (state.phase === "intro") {
+      eng.introAdvance();
+      return;
+    }
+
+    if (state.phase === "playing") {
+      eng.processCommand(line);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        maxWidth: 520,
+        margin: "0 auto",
+        fontFamily: "ui-monospace, monospace",
+        background: "#0d1117",
+        color: "#c9d1d9",
+        minHeight: "100vh",
+        padding: 16,
+      }}
+    >
+      <h1 style={{ fontSize: 18, marginBottom: 8 }}>
+        Twin Kingdom Valley
+      </h1>
+      {state?.phase === "error" && (
+        <p style={{ color: "#f85149" }}>{state.error}</p>
+      )}
+      <canvas
+        ref={canvasRef}
+        style={{
+          display: "block",
+          border: "2px solid #30363d",
+          borderRadius: 4,
+          imageRendering: "pixelated",
+        }}
+      />
+      <div
+        style={{
+          height: 220,
+          overflowY: "auto",
+          marginTop: 12,
+          padding: 8,
+          background: "#161b22",
+          borderRadius: 4,
+          fontSize: 12,
+          lineHeight: 1.45,
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {(state?.logLines ?? []).map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </div>
+      <form onSubmit={onSubmit} style={{ marginTop: 12, display: "flex", gap: 8 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={
+            state?.phase === "menu"
+              ? "Menu 1–8 + Enter"
+              : state?.phase === "intro"
+                ? "Enter for next page"
+                : "Command (e.g. LOOK, N, HELP)"
+          }
+          style={{
+            flex: 1,
+            padding: "8px 10px",
+            borderRadius: 4,
+            border: "1px solid #30363d",
+            background: "#0d1117",
+            color: "#c9d1d9",
+          }}
+        />
+        <button
+          type="submit"
+          style={{
+            padding: "8px 14px",
+            borderRadius: 4,
+            border: "none",
+            background: "#238636",
+            color: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          Enter
+        </button>
+      </form>
+      <p style={{ fontSize: 11, opacity: 0.65, marginTop: 12 }}>
+        Demo web port: world data loads from original <code>1.bin</code> /{" "}
+        <code>2.bin</code> / <code>3.bin</code>. Command parser is simplified;
+        full J2ME <code>e.java</code> engine is ~5k lines — extend{" "}
+        <code>engine.ts</code> to grow fidelity.
+      </p>
+    </div>
+  );
+}
