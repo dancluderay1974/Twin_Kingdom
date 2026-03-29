@@ -1,17 +1,19 @@
 import { decodeB, decodeD } from "./strings";
 import { DIRECTIONS, parseCommandLine } from "./parser";
+import { load1Bin, load3Bin, type GameWorld } from "./world";
 import {
-  applyGInit,
-  load1Bin,
-  load3Bin,
-  type GameWorld,
-} from "./world";
-import {
+  applyResumeToWorld,
+  buildSaveV2,
   clearSave,
+  createResumeFromWorld,
   loadSave,
-  type SavePayloadV1,
-  writeSave,
+  newResumeFromFreshWorld,
+  writeSaveV2,
+  type LoadedSave,
 } from "./save";
+import type { ResumeRuntime } from "../jme/resumeRecord";
+import { PictureInterpreter } from "../jme/pictureM";
+import { midpYield } from "../jme/enginePort";
 
 export type GamePhase =
   | "loading"
@@ -33,6 +35,8 @@ export type EngineState = {
   /** Picture opcode stream loaded (for future M() renderer) */
   opcodesLoaded: boolean;
   worldLoaded: boolean;
+  /** Incremented when vector picture buffer is rebuilt */
+  pictureTick: number;
 };
 
 const MENU = [
@@ -69,6 +73,11 @@ function read2BinPages(buffer: ArrayBuffer): string[][] {
 
 export class TwinKingdomEngine {
   world: GameWorld | null = null;
+  private readonly picture = new PictureInterpreter();
+  /** Mutable resume snapshot (tkv_resume); kept in sync on save */
+  resume: ResumeRuntime | null = null;
+  private bin1Buffer: ArrayBuffer | null = null;
+  private bin3Buffer: ArrayBuffer | null = null;
   private pages2: string[][] = [];
   private listeners: EngineListener[] = [];
   private state: EngineState = {
@@ -79,12 +88,27 @@ export class TwinKingdomEngine {
     menuIndex: 0,
     opcodesLoaded: false,
     worldLoaded: false,
+    pictureTick: 0,
   };
 
   roomIndex = 0;
   score = 0;
   /** Mirrors progress display a.H / 1250 from original */
   playerStat = 1;
+
+  getPictureBuffer(): Int32Array | null {
+    if (!this.world || !this.state.worldLoaded) return null;
+    return this.picture.getBuffer();
+  }
+
+  refreshPicture(): void {
+    if (!this.world) return;
+    const d = this.world.d268;
+    const i = Math.min(Math.max(0, this.roomIndex), d.length - 1);
+    const pc = d[i] ?? 0;
+    this.picture.run(this.world, pc);
+    this.state.pictureTick++;
+  }
 
   subscribe(fn: EngineListener): () => void {
     this.listeners.push(fn);
@@ -120,13 +144,16 @@ export class TwinKingdomEngine {
       const b2 = await r2.arrayBuffer();
       const b3 = await r3.arrayBuffer();
 
+      this.bin1Buffer = b1;
+      this.bin3Buffer = b3;
       this.world = load1Bin(b1);
-      applyGInit(this.world);
+      this.resume = newResumeFromFreshWorld(this.world);
       load3Bin(this.world, b3);
       this.pages2 = read2BinPages(b2);
       this.state.introTotalPages = this.pages2.length;
       this.state.worldLoaded = true;
       this.state.opcodesLoaded = true;
+      await midpYield(0);
       this.state.phase = "splash";
       this.emit();
     } catch (e) {
@@ -189,11 +216,17 @@ export class TwinKingdomEngine {
     } catch {
       this.appendLog("Welcome to Twin Kingdom Valley.");
     }
+    this.refreshPicture();
     this.emit();
   }
 
   newGame(): void {
     clearSave();
+    if (this.bin1Buffer) {
+      this.world = load1Bin(this.bin1Buffer);
+      this.resume = newResumeFromFreshWorld(this.world);
+      if (this.bin3Buffer) load3Bin(this.world, this.bin3Buffer);
+    }
     this.roomIndex = 0;
     this.score = 0;
     this.playerStat = 1;
@@ -203,20 +236,23 @@ export class TwinKingdomEngine {
 
   resumeGame(): void {
     const s = loadSave();
-    if (s) this.applySave(s);
+    if (s) this.applyLoadedSave(s);
     this.enterPlaying();
   }
 
   saveGame(): void {
-    const payload: SavePayloadV1 = {
-      v: 1,
+    if (!this.world || !this.resume) {
+      this.appendLog("(World not ready.)");
+      return;
+    }
+    const payload = buildSaveV2(this.world, this.resume, {
       roomIndex: this.roomIndex,
       score: this.score,
       playerStat: this.playerStat,
       logSnapshot: this.state.logLines.slice(-40),
-    };
-    writeSave(payload);
-    this.appendLog("(Game saved to browser localStorage.)");
+    });
+    writeSaveV2(payload);
+    this.appendLog("(Game saved — Twin Kingdom resume record v2.)");
   }
 
   loadGame(): void {
@@ -225,17 +261,24 @@ export class TwinKingdomEngine {
       this.appendLog("(No saved game found.)");
       return;
     }
-    this.applySave(s);
+    this.applyLoadedSave(s);
     this.appendLog("(Loaded save.)");
     this.enterPlaying();
   }
 
-  private applySave(s: SavePayloadV1): void {
-    this.roomIndex = s.roomIndex;
-    this.score = s.score;
-    this.playerStat = s.playerStat;
-    if (s.logSnapshot?.length) {
-      this.state.logLines = [...s.logSnapshot];
+  private applyLoadedSave(loaded: LoadedSave): void {
+    if (!this.world) return;
+    const p = loaded.payload;
+    this.roomIndex = p.roomIndex;
+    this.score = p.score;
+    this.playerStat = p.playerStat;
+    if (p.logSnapshot?.length) {
+      this.state.logLines = [...p.logSnapshot];
+    }
+    if (loaded.version === 2 && "resume" in p) {
+      this.resume = applyResumeToWorld(this.world, p.resume);
+    } else {
+      this.resume = createResumeFromWorld(this.world);
     }
   }
 
@@ -265,7 +308,7 @@ export class TwinKingdomEngine {
         break;
       case "inventory":
       case "i":
-        this.appendLog("You are carrying nothing of note (demo).");
+        this.appendLog("You are carrying nothing of note.");
         break;
       case "quit":
       case "exit":
@@ -294,6 +337,7 @@ export class TwinKingdomEngine {
     }
     this.score = Math.min(1250, this.score + 1);
     this.playerStat = Math.min(1250, this.playerStat + 2);
+    this.refreshPicture();
     this.emit();
   }
 

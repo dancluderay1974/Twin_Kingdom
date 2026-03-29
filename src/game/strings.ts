@@ -1,22 +1,18 @@
 import { signedByteToUnsigned, type GameWorld } from "./world";
 
-/** e.d(n) — UI / system strings from 1.bin string pool */
+/** e.d(n) — UI strings from pool a:[B] with a:[S] start indices */
 export function decodeD(world: GameWorld, n: number): string {
-  return decodeFromPool(
-    world.stringPool2526,
-    world.dStringStarts,
-    n,
-  );
+  return decodeFromPool(world.poolA2526, world.offsetA126, n);
 }
 
-/** e.b(n) — entity / room text from e1324 pool (offsets in e1324 via table in e — use byte run from start) */
+/** e.b(n) — strings from e:[B] with e:[S] starts */
 export function decodeB(world: GameWorld, n: number): string {
-  return decodeFromBytePoolRun(world.e1324, n);
+  return decodeFromPool(world.e1324, world.eStarts, n);
 }
 
-/** e.c(n) — alternate pool f746 */
+/** e.c(n) — strings from f:[B] with f:[S] starts */
 export function decodeC(world: GameWorld, n: number): string {
-  return decodeFromBytePoolRun(world.f746, n);
+  return decodeFromPool(world.f746, world.fStarts, n);
 }
 
 function decodeFromPool(
@@ -31,33 +27,11 @@ function decodeFromPool(
   let out = "";
   let decoded = 0;
   do {
+    if (m >= pool.length) break;
     const raw = pool[m];
     decoded = signedByteToUnsigned(raw);
     out += String.fromCharCode(decoded & 0x7f);
     m++;
-  } while ((decoded & 0x80) === 0);
-  return out;
-}
-
-/**
- * b(n) / c(n) in original use offset tables inside the same byte arrays;
- * without full offset rebuild, scan from 0 using same 7-bit terminal encoding for low indices.
- */
-function decodeFromBytePoolRun(pool: Int8Array, n: number): string {
-  let i = 0;
-  for (let skip = 0; skip < n; skip++) {
-    if (i >= pool.length) break;
-    let decoded = 0;
-    do {
-      decoded = signedByteToUnsigned(pool[i++]);
-    } while ((decoded & 0x80) === 0 && i < pool.length);
-  }
-  let out = "";
-  let decoded = 0;
-  do {
-    if (i >= pool.length) break;
-    decoded = signedByteToUnsigned(pool[i++]);
-    out += String.fromCharCode(decoded & 0x7f);
   } while ((decoded & 0x80) === 0);
   return out;
 }

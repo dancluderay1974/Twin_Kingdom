@@ -4,6 +4,7 @@ import {
   type EngineState,
 } from "../game/engine";
 import { createHiDPICanvas, drawSpriteFrame } from "../game/renderer";
+import { drawPictureBuffer } from "../jme/pictureM";
 import { hasSave } from "../game/save";
 
 const base = import.meta.env.BASE_URL;
@@ -42,10 +43,16 @@ export default function Game() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !spImg) return;
+    if (!canvas || !spImg || !state) return;
     const ctx = createHiDPICanvas(canvas, 176, 220);
-    drawSpriteFrame(ctx, spImg, 176, 220);
-  }, [spImg, state?.phase]);
+    if (state.phase === "playing") {
+      const buf = engineRef.current?.getPictureBuffer();
+      if (buf) drawPictureBuffer(ctx, buf, 0, 0);
+      else drawSpriteFrame(ctx, spImg, 176, 220);
+    } else if (state.phase !== "splash") {
+      drawSpriteFrame(ctx, spImg, 176, 220);
+    }
+  }, [spImg, state?.phase, state?.pictureTick]);
 
   useEffect(() => {
     if (state?.phase !== "splash" || !loImg) return;
@@ -92,12 +99,9 @@ export default function Game() {
         if (hasSave()) eng.resumeGame();
         else eng.appendLog("(No resume data.)");
       } else if (n === 5) eng.saveGame();
-      else if (n === 6)
-        eng.appendLog("(Options: use on-screen keyboard; demo build.)");
+      else if (n === 6) eng.appendLog("(Options: not yet wired.)");
       else if (n === 7)
-        eng.appendLog(
-          "Twin Kingdom Valley J2ME v1.21 → Web. Data from original binaries.",
-        );
+        eng.appendLog("Twin Kingdom Valley J2ME v1.21 → Web.");
       else if (n === 8) eng.appendLog("Close the tab to exit.");
       return;
     }
@@ -199,10 +203,9 @@ export default function Game() {
         </button>
       </form>
       <p style={{ fontSize: 11, opacity: 0.65, marginTop: 12, flexShrink: 0 }}>
-        Demo web port: world data loads from original <code>1.bin</code> /{" "}
-        <code>2.bin</code> / <code>3.bin</code>. Command parser is simplified;
-        full J2ME <code>e.java</code> engine is ~5k lines — extend{" "}
-        <code>engine.ts</code> to grow fidelity.
+        Data: <code>1.bin</code>, <code>2.bin</code>, <code>3.bin</code>,{" "}
+        <code>sp.png</code>. Resume uses MIDP-compatible <code>tkv_resume</code>{" "}
+        v2 in localStorage.
       </p>
     </div>
   );

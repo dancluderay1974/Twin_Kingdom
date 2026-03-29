@@ -1,44 +1,47 @@
 /**
- * Loads game data from /1.bin (g.a(InputStream) in g.java) and /3.bin (e.aA in e.java).
- * Array sizes and read order derived from CFR decompilation; 551-byte segments match file size 10519.
+ * Loads /1.bin exactly as g.b–g.g in g.class (verified against javap for Twin-Kingdom-Valley JAR).
  */
 
 export const LEN = {
-  bShort551: 551,
-  cShort200: 200,
+  shortB2478: 2478,
+  shortC200: 200,
   vec16: 16,
   vec37: 37,
   int40: 40,
-  pair54: 54,
+  pairGB: 54,
+  dByte200: 200,
   dShort268: 268,
   eByte1324: 1324,
+  eShort260: 260,
   fByte746: 746,
-  cByte200: 200,
-  stringPool2526: 2526,
+  fShort127: 127,
+  cByte114: 114,
+  bByte551: 551,
+  poolA2526: 2526,
+  shortA126: 126,
   longLines260: 260,
-  /** JAR ships 10556 bytes; decompiled loop used 10546 — we size to file */
   opcodeMax: 11000,
-  stringOffsets126: 126,
 } as const;
 
-/** Java g.a(int): stream 0–255 → signed byte storage */
 export function streamByteToSignedByte(v: number): number {
   if (v > 127) return -((v - 127) | 0);
   return (v & 0xff) | 0;
 }
 
-/** Java g.a(byte): signed storage → 0–255 for bit tests */
 export function signedByteToUnsigned(b: number): number {
   const n = b | 0;
   if (n < 0) return -n + 127;
   return n & 0xff;
 }
 
+/** Java g.a(int) for stream → signed storage */
+export function gStreamToByte(v: number): number {
+  return streamByteToSignedByte(v);
+}
+
 export interface GameWorld {
-  /** short[551] — first segment of 1.bin */
-  b551: Int16Array;
-  /** short[200] */
-  c200: Int16Array;
+  shortB2478: Int16Array;
+  shortC200: Int16Array;
   n16: Int16Array;
   o16: Int16Array;
   p16: Int16Array;
@@ -57,25 +60,29 @@ export interface GameWorld {
   i40: Int8Array;
   j40: Int8Array;
   k40: Int8Array;
-  l40: Uint8Array;
+  l40: Int8Array;
   m40: Int8Array;
-  n40: Uint8Array;
-  g54: Uint8Array;
+  n40: Int8Array;
+  gVerb54: Int8Array;
   B54: Int16Array;
+  dByte200: Int8Array;
   d268: Int16Array;
   e1324: Int8Array;
+  eStarts: Int16Array;
+  eStartCount: number;
   f746: Int8Array;
-  cByte200: Int8Array;
+  fStarts: Int16Array;
+  fStartCount: number;
+  cByte114: Int8Array;
   bByte551: Int8Array;
-  /** String pool for e.d() */
-  stringPool2526: Int8Array;
-  /** Starting indices of d-strings (first n4 entries used) */
-  dStringStarts: Int16Array;
-  dStringStartCount: number;
+  poolA2526: Int8Array;
+  offsetA126: Int16Array;
+  offsetACount: number;
   long260: BigInt64Array;
-  /** 3.bin opcodes */
   pictureOpcodes: Int8Array;
   pictureOpcodeLength: number;
+  /** Byte offset after load1Bin (must equal buffer length) */
+  bytesConsumed: number;
 }
 
 function readU8(buf: Uint8Array, pos: { i: number }): number {
@@ -86,16 +93,14 @@ export function load1Bin(buffer: ArrayBuffer): GameWorld {
   const buf = new Uint8Array(buffer);
   const pos = { i: 0 };
 
-  const b551 = new Int16Array(LEN.bShort551);
-  for (let n = 0; n < LEN.bShort551; n++) {
-    b551[n] = readU8(buf, pos);
+  const shortB2478 = new Int16Array(LEN.shortB2478);
+  for (let n = 0; n < LEN.shortB2478; n++) {
+    shortB2478[n] = readU8(buf, pos);
   }
 
-  const c200 = new Int16Array(LEN.cShort200);
-  for (let n = 0; n < LEN.cShort200; n++) {
-    const hi = readU8(buf, pos);
-    const lo = readU8(buf, pos);
-    c200[n] = (hi << 8) | lo;
+  const shortC200 = new Int16Array(LEN.shortC200);
+  for (let n = 0; n < LEN.shortC200; n++) {
+    shortC200[n] = (readU8(buf, pos) << 8) | readU8(buf, pos);
   }
 
   const mk16 = () => new Int16Array(LEN.vec16);
@@ -135,9 +140,9 @@ export function load1Bin(buffer: ArrayBuffer): GameWorld {
   const i40 = new Int8Array(LEN.int40);
   const j40 = new Int8Array(LEN.int40);
   const k40 = new Int8Array(LEN.int40);
-  const l40 = new Uint8Array(LEN.int40);
+  const l40 = new Int8Array(LEN.int40);
   const m40 = new Int8Array(LEN.int40);
-  const n40 = new Uint8Array(LEN.int40);
+  const n40 = new Int8Array(LEN.int40);
 
   for (let n = 0; n < LEN.int40; n++) {
     let v = readU8(buf, pos);
@@ -145,64 +150,84 @@ export function load1Bin(buffer: ArrayBuffer): GameWorld {
     v += readU8(buf, pos) << 16;
     v += readU8(buf, pos) << 24;
     int40[n] = v | 0;
-    h40[n] = streamByteToSignedByte(readU8(buf, pos));
+    h40[n] = gStreamToByte(readU8(buf, pos));
     C40[n] = readU8(buf, pos);
-    i40[n] = streamByteToSignedByte(readU8(buf, pos));
-    j40[n] = streamByteToSignedByte(readU8(buf, pos));
-    k40[n] = streamByteToSignedByte(readU8(buf, pos));
-    l40[n] = readU8(buf, pos);
-    m40[n] = streamByteToSignedByte(readU8(buf, pos));
-    n40[n] = readU8(buf, pos);
+    i40[n] = gStreamToByte(readU8(buf, pos));
+    j40[n] = gStreamToByte(readU8(buf, pos));
+    k40[n] = gStreamToByte(readU8(buf, pos));
+    l40[n] = readU8(buf, pos) << 24 >> 24;
+    m40[n] = gStreamToByte(readU8(buf, pos));
+    n40[n] = readU8(buf, pos) << 24 >> 24;
   }
 
-  const g54 = new Uint8Array(LEN.pair54);
-  const B54 = new Int16Array(LEN.pair54);
-  for (let n = 0; n < LEN.pair54; n++) {
-    g54[n] = readU8(buf, pos);
+  const gVerb54 = new Int8Array(LEN.pairGB);
+  const B54 = new Int16Array(LEN.pairGB);
+  for (let n = 0; n < LEN.pairGB; n++) {
+    gVerb54[n] = readU8(buf, pos) << 24 >> 24;
     B54[n] = readU8(buf, pos);
+  }
+
+  const dByte200 = new Int8Array(LEN.dByte200);
+  for (let n = 0; n < LEN.dByte200; n++) {
+    dByte200[n] = gStreamToByte(readU8(buf, pos));
   }
 
   const d268 = new Int16Array(LEN.dShort268);
   for (let n = 0; n < LEN.dShort268; n++) {
-    d268[n] = streamByteToSignedByte(readU8(buf, pos));
-  }
-  for (let n = 0; n < LEN.dShort268; n++) {
-    const hi = readU8(buf, pos);
-    const lo = readU8(buf, pos);
-    d268[n] = (hi << 8) | lo;
+    d268[n] = (readU8(buf, pos) << 8) | readU8(buf, pos);
   }
 
   const e1324 = new Int8Array(LEN.eByte1324);
-  const f746 = new Int8Array(LEN.fByte746);
-  const cByte200 = new Int8Array(LEN.cByte200);
-  const bByte551 = new Int8Array(LEN.bByte551);
-  const stringPool2526 = new Int8Array(LEN.stringPool2526);
-  const dStringStarts = new Int16Array(LEN.stringOffsets126);
-  let dStringStartCount = 0;
-
-  const readFChunk = (target: Int8Array, markStarts: boolean): void => {
-    let n4 = 0;
-    for (let n3 = 0; n3 < target.length; n3++) {
-      let n2 = readU8(buf, pos);
-      const nibHi = (n2 & 0xf0) >> 4;
-      const nibLo = (n2 & 0xf) << 4;
-      n2 = nibHi | nibLo;
-      if ((n2 & 0x80) > 0) {
-        if (markStarts && n4 < dStringStarts.length) {
-          dStringStarts[n4] = n3;
-          n4++;
-        }
-      }
-      target[n3] = streamByteToSignedByte(n2);
+  const eStarts = new Int16Array(LEN.eShort260);
+  let eStartCount = 0;
+  for (let n3 = 0; n3 < LEN.eByte1324; n3++) {
+    let n2 = readU8(buf, pos);
+    const hi = n2 & 0x80;
+    if (hi > 0 && eStartCount < LEN.eShort260) {
+      eStarts[eStartCount++] = n3;
     }
-    if (markStarts) dStringStartCount = n4;
-  };
+    n2 = (n2 & 0x40) === 0x40 ? n2 & 0x3f : ((n2 & 0x7f) >> 1) + 65;
+    e1324[n3] = gStreamToByte(n2 + hi);
+  }
 
-  readFChunk(e1324, false);
-  readFChunk(f746, false);
-  readFChunk(cByte200, false);
-  readFChunk(bByte551, false);
-  readFChunk(stringPool2526, true);
+  const f746 = new Int8Array(LEN.fByte746);
+  const fStarts = new Int16Array(LEN.fShort127);
+  let fStartCount = 0;
+  for (let n3 = 0; n3 < LEN.fByte746; n3++) {
+    let n2 = readU8(buf, pos);
+    const hi = n2 & 0x80;
+    if (hi > 0 && fStartCount < LEN.fShort127) {
+      fStarts[fStartCount++] = n3;
+    }
+    n2 = (n2 & 0x40) === 0x40 ? n2 & 0x3f : ((n2 & 0x7f) >> 1) + 65;
+    f746[n3] = gStreamToByte(n2 + hi);
+  }
+
+  const cByte114 = new Int8Array(LEN.cByte114);
+  for (let n3 = 0; n3 < LEN.cByte114; n3++) {
+    cByte114[n3] = gStreamToByte(readU8(buf, pos));
+  }
+
+  const bByte551 = new Int8Array(LEN.bByte551);
+  for (let n3 = 0; n3 < LEN.bByte551; n3++) {
+    bByte551[n3] = gStreamToByte(readU8(buf, pos));
+  }
+
+  const poolA2526 = new Int8Array(LEN.poolA2526);
+  const offsetA126 = new Int16Array(LEN.shortA126);
+  let offsetACount = 0;
+  let scratchA = 0;
+  let scratchB = 0;
+  for (let n3 = 0; n3 < LEN.poolA2526; n3++) {
+    let n2 = readU8(buf, pos);
+    scratchA = (n2 & 0xf0) >> 4;
+    scratchB = (n2 & 0x0f) << 4;
+    n2 = scratchA | scratchB;
+    if ((n2 & 0x80) > 0 && offsetACount < LEN.shortA126) {
+      offsetA126[offsetACount++] = n3;
+    }
+    poolA2526[n3] = gStreamToByte(n2);
+  }
 
   const long260 = new BigInt64Array(LEN.longLines260);
   for (let i = 0; i < LEN.longLines260; i++) {
@@ -226,15 +251,11 @@ export function load1Bin(buffer: ArrayBuffer): GameWorld {
     }
   }
 
-  if (pos.i !== buf.length) {
-    console.warn(
-      `[world] 1.bin consumed ${pos.i} of ${buf.length} bytes (expected exact match)`,
-    );
-  }
+  const bytesConsumed = pos.i;
 
   return {
-    b551,
-    c200,
+    shortB2478,
+    shortC200,
     n16,
     o16,
     p16,
@@ -256,19 +277,25 @@ export function load1Bin(buffer: ArrayBuffer): GameWorld {
     l40,
     m40,
     n40,
-    g54,
+    gVerb54,
     B54,
+    dByte200,
     d268,
     e1324,
+    eStarts,
+    eStartCount,
     f746,
-    cByte200,
+    fStarts,
+    fStartCount,
+    cByte114,
     bByte551,
-    stringPool2526,
-    dStringStarts,
-    dStringStartCount,
+    poolA2526,
+    offsetA126,
+    offsetACount,
     long260,
     pictureOpcodes: new Int8Array(LEN.opcodeMax),
     pictureOpcodeLength: 0,
+    bytesConsumed,
   };
 }
 
@@ -285,8 +312,11 @@ export function load3Bin(world: GameWorld, buffer: ArrayBuffer): void {
   }
 }
 
-/** Post-load defaults from g.c() tail (g.java ~743–766) */
-export function applyGInit(world: GameWorld): void {
-  void world;
-  // Numeric scalars live in engine runtime state (engine.ts); world holds arrays only.
+export function assert1BinFullyConsumed(world: GameWorld, fileSize: number): void {
+  if (world.bytesConsumed !== fileSize) {
+    throw new Error(
+      `1.bin: consumed ${world.bytesConsumed} bytes, file is ${fileSize}`,
+    );
+  }
 }
+
